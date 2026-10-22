@@ -1,137 +1,47 @@
 # Can AI Listen to the Market?
 
-Monitoramento automatizado de notícias e geração de um indicador diário de sentimento de mercado utilizando **Python, NLP/LLM e Microsoft Foundry**.
+POC de monitoramento de notícias e geração de sinais para o mercado brasileiro
+de energia elétrica usando Python, NLP/LLM e Microsoft Foundry.
 
-O objetivo é demonstrar a possibilidade de transformar notícias de diferentes fontes em um sinal estruturado de mercado.
+O alvo de mercado é o **preço da última operação de cada dia no BBCE eHub para
+o produto M+1**, com entrega no mês seguinte. As notícias são avaliadas pelo
+impacto esperado sobre esse preço no próximo pregão disponível.
 
-Além do indicador diário, o projeto inclui um experimento preditivo simples e
-temporalmente correto: as informações disponíveis no dia `t` são usadas para
-prever a direção do preço no próximo pregão. A comparação usa o mesmo modelo
-com e sem a feature de notícias, evitando atribuir à IA uma melhora causada por
-mudança de algoritmo.
-
----
-
-## Arquitetura
-
-```text
-News Sources (RSS)
-        │
-        ▼
-    Collectors
-        │
-        ▼
-  Normalization
-        │
-        ▼
- News Repository
- CSV por categoria
-        │
-        ▼
-     NLP / LLM
- Microsoft Foundry
-   GPT-5.4-mini
-        │
-        ▼
- sentiment
- score
- relevance
- reason
-        │
-        ▼
- Signal Aggregator
-        │
-        ▼
- Daily Market Signal
-     [-1, +1]
-        ├──────────────► Streamlit Dashboard
-        │
-        ▼
-  Notebooks de DS
- EDA + alinhamento temporal
-        │
-        ▼
- Direção do próximo pregão
-   alta (1) / queda (0)
-```
-
----
+Além do indicador diário, o projeto contém experimentos temporalmente corretos
+para medir se as notícias acrescentam informação às variáveis de mercado.
 
 ## Fluxo
 
-### 1. Coleta
-
-Cada fonte possui seu próprio collector em:
-
 ```text
-src/collectors/
+MegaWhat RSS
+    │
+    ▼
+Bronze: registro da fonte
+    │
+    ▼
+Silver: notícia normalizada ─────► Silver: avaliação do LLM
+    │                                      │
+    └──────────────────┬───────────────────┘
+                       ▼
+              Gold: sinal diário
+                       │
+             ┌─────────┴─────────┐
+             ▼                   ▼
+          Dashboard          Notebooks/ML
 ```
 
-Os collectors acessam os feeds RSS e extraem as notícias disponíveis.
-
-### 2. Normalização
-
-Cada fonte possui seu normalizador em:
-
-```text
-src/normalization/
-```
-
-Independentemente da estrutura original do RSS, todas as notícias são convertidas para o contrato:
-
-```python
-{
-    "source": "...",
-    "title": "...",
-    "summary": "...",
-    "url": "...",
-    "published_at": "...",
-    "fetched_at": "..."
-}
-```
-
-### 3. Persistência
-
-As notícias normalizadas são armazenadas por categoria em:
-
-```text
-data/processed/
-```
-
-Exemplos:
-
-```text
-energy_br.csv
-real_estate.csv
-```
-
-O repository também evita duplicação de notícias já coletadas.
-
-### 4. NLP / LLM
-
-As notícias ainda não analisadas são enviadas ao modelo **GPT-5.4-mini** via Microsoft Foundry.
-
-Para cada notícia, o modelo retorna:
+Para cada notícia, o LLM produz:
 
 ```json
 {
-    "sentiment": "positive | neutral | negative",
-    "score": -1.0,
-    "relevance": 0.0,
-    "reason": "..."
+  "sentiment": "positive | neutral | negative",
+  "score": 0.0,
+  "relevance": 0.0,
+  "reason": "..."
 }
 ```
 
-Onde:
-
-- `sentiment`: classificação do impacto;
-- `score`: intensidade e direção do sentimento, entre -1 e +1;
-- `relevance`: relevância da notícia para o mercado analisado, entre 0 e 1;
-- `reason`: justificativa da classificação.
-
-### 5. Signal Aggregator
-
-O indicador é calculado diariamente utilizando a data de publicação das notícias.
+O sinal diário é calculado por:
 
 ```text
 Σ(score × relevance)
@@ -139,7 +49,7 @@ O indicador é calculado diariamente utilizando a data de publicação das notí
     Σ(relevance)
 ```
 
-Classificação utilizada na POC:
+Os thresholds atuais são heurísticos:
 
 ```text
 signal < -0.15            NEGATIVE
@@ -147,174 +57,127 @@ signal < -0.15            NEGATIVE
 signal > 0.15             POSITIVE
 ```
 
-Os thresholds são heurísticos e não foram calibrados historicamente.
+## Arquitetura de dados
 
-### 6. Dashboard
-
-O dashboard Streamlit apresenta:
-
-- sinal diário;
-- histórico do indicador;
-- quantidade de notícias analisadas;
-- relevância média;
-- distribuição de sentimento;
-- feed das notícias;
-- score, relevância e justificativa produzidos pelo LLM.
-
----
-
-## Estrutura do projeto
+O projeto usa uma arquitetura medalhão leve. O dicionário detalhado está em
+[`data/README.md`](data/README.md).
 
 ```text
-config/
-└── sites/                 # Configuração das fontes
-
 data/
-├── processed/             # CSVs de notícias por categoria
-├── market/                # Série diária de mercado
-└── features/              # Bases produzidas pelos notebooks
-
-notebooks/
-├── 01_news_daily_features.ipynb       # Texto vira features numéricas
-├── 02_market_news_eda.ipynb           # EDA, gráficos e alinhamento temporal
-├── 03_classification_next_day_direction.ipynb       # Modelo de classificação
-└── 04_time_series_sarimax_same_day_price.ipynb      # Modelo de série temporal
-
-src/
-├── collectors/            # Coleta RSS
-├── normalization/         # Normalização por fonte
-├── repository/            # Persistência e deduplicação
-├── nlp/                   # Integração com LLM
-├── signals/               # Cálculo do indicador
-├── dashboard/             # Dashboard Streamlit
-└── pipeline.py            # Orquestração do pipeline
+├── bronze/
+│   └── news/
+│       └── megawhat_news.csv
+├── silver/
+│   ├── news/
+│   │   └── br_energy_news.csv
+│   ├── nlp/
+│   │   └── br_energy_news_scores.csv
+│   └── market/
+│       └── bbce_ehub_m1_closing_price_daily.csv
+└── gold/
+    ├── signals/
+    │   └── br_energy_news_signal_daily.csv
+    ├── features/
+    │   └── br_energy_news_features_daily.csv
+    └── modeling/
+        └── bbce_ehub_m1_news_features_daily.csv
 ```
 
----
+Notícias e avaliações ficam separadas. Cada avaliação registra o modelo, a
+versão do prompt e o horário da análise, permitindo upgrades e reprocessamentos
+sem recolher a fonte ou sobrescrever análises anteriores.
+
+## Estrutura do código
+
+```text
+config/sites/                  # Configuração da fonte MegaWhat
+scripts/migrate_to_medallion.py
+src/
+├── collectors/                # Coleta atual e histórica
+├── normalization/             # Contrato normalizado de notícias
+├── repository/                # Persistência e deduplicação
+├── nlp/                       # Cliente, prompt e processamento LLM
+├── signals/                   # Sinal diário
+├── dashboard/                 # Dashboard Streamlit
+├── paths.py                   # Caminhos canônicos do projeto
+└── pipeline.py                # Orquestração ponta a ponta
+```
+
+Os notebooks devem ser executados nesta ordem:
+
+1. `01_news_daily_features.ipynb` — features diárias de notícias;
+2. `02_market_news_eda.ipynb` — alinhamento com pregões e EDA;
+3. `03_classification_next_day_direction.ipynb` — direção do próximo pregão;
+4. `04_time_series_sarimax_same_day_price.ipynb` — nowcasting do fechamento.
 
 ## Configuração
 
-O projeto utiliza [uv](https://docs.astral.sh/uv/) para gerenciamento do ambiente e dependências.
-
-Clone o repositório:
-
-```bash
-git clone https://github.com/Hudson-Borgo/Can-AI-listen-to-the-market-.git
-cd Can-AI-listen-to-the-market-
-```
-
-Instale as dependências:
+O ambiente é gerenciado com [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv sync
-```
-
-Crie o arquivo `.env` a partir do exemplo:
-
-```bash
 cp .env.example .env
 ```
 
-Configure no `.env` as credenciais necessárias para acesso ao Azure OpenAI / Microsoft Foundry.
+Configure as credenciais do Microsoft Foundry/Azure OpenAI no `.env`:
 
----
+```dotenv
+AZURE_OPENAI_API_KEY=SUA_CHAVE_AQUI
+AZURE_OPENAI_ENDPOINT=https://YOUR_RESOURCE_NAME.openai.azure.com/
+AZURE_OPENAI_MODEL=gpt-5.4-mini
+```
 
-## Executando o pipeline
+## Execução
 
-Na raiz do projeto:
+Pipeline completo:
 
 ```bash
 uv run python -m src.pipeline
 ```
 
-O pipeline executa sequencialmente:
-
-```text
-Collect
-   ↓
-Normalize
-   ↓
-Persist / Deduplicate
-   ↓
-LLM Analysis
-   ↓
-Daily Market Signal
-```
-
----
-
-## Executando componentes isoladamente
-
-Collector MegaWhat:
+Componentes isolados:
 
 ```bash
 uv run python -m src.collectors.megawhat
-```
-
-NLP:
-
-```bash
-uv run python -m src.nlp.process_category
-```
-
-Signal Aggregator:
-
-```bash
+uv run python -m src.nlp.process_energy_news
 uv run python -m src.signals.aggregate
 ```
 
-## Notebooks de Data Science
+Coleta histórica:
 
-Execute os notebooks na ordem:
+```bash
+uv run python -m src.collectors.megawhat_history \
+  --start-date 2026-01-01 \
+  --end-date 2026-08-31
+```
 
-1. `01_news_daily_features.ipynb`: inspeciona e agrega as avaliações do LLM;
-2. `02_market_news_eda.ipynb`: mostra scores, sinais e preço de fechamento,
-   alinha fins de semana ao próximo pregão e gera a base de modelagem;
-3. `03_classification_next_day_direction.ipynb`: compara o mesmo classificador com e
-   sem notícias usando validação temporal walk-forward;
-4. `04_time_series_sarimax_same_day_price.ipynb`: usa `SARIMAX(1,0,0)` com o
-   fechamento anterior como exógena para modelar diretamente o fechamento atual.
-   A versão com IA adiciona um sinal de notícias muito relevantes
-   (`relevance >= 0.85`) suavizado em 7 pregões.
-
-O resultado principal é a acurácia média em quatro janelas futuras. Nesta POC,
-o modelo base usa o retorno corrente; o modelo enriquecido adiciona
-`negative_share`, a proporção diária de notícias classificadas pelo LLM como
-negativas. O alvo é `direction_next_day`, derivado de `return_next_day > 0`.
-Nenhuma informação do próximo pregão entra nas features.
-
-> A série é curta. A melhora é uma evidência didática fora da amostra, não uma
-> garantia de desempenho futuro nem uma estratégia de investimento.
-
-O notebook 04 é um exercício de *nowcasting*: as notícias do dia ajudam a
-explicar o fechamento do mesmo dia. Sem um horário de corte de publicação, ele
-não deve ser interpretado como uma previsão disponível antes da abertura.
-Na validação walk-forward, os dois notebooks comparam o mesmo algoritmo antes e
-depois de adicionar notícias. Assim, o ganho não é causado por troca de modelo.
-Na base atual, a classificação compara 4 features de mercado contra as mesmas
-4 features mais o sinal de notícias; a acurácia média melhora de `52.5%` para
-`58.3%`. No SARIMAX, o baseline usa 3 exógenas históricas de mercado e a versão
-com IA adiciona uma quarta exógena de notícias; o MAE cai de `12.41` para `11.80`
-(`5.0%`) e o RMSE de `16.55` para `16.26` (`1.7%`). O threshold e a janela de suavização
-foram calibrados nesta amostra e devem permanecer fixos ao validar novos dados.
-
----
-
-## Executando o dashboard
-
-Na raiz do projeto:
+Dashboard:
 
 ```bash
 PYTHONPATH=. uv run streamlit run src/dashboard/app.py
 ```
+
+O dashboard lê as notícias e scores da camada silver e o sinal diário persistido
+na camada gold.
+
+## Migração do layout legado
+
+O script abaixo migra os antigos CSVs para as novas camadas, separa os scores do
+conteúdo das notícias, remove duplicatas por fonte/URL e não chama fontes
+externas nem o LLM:
+
 ```bash
-$env:PYTHONPATH="."; uv run streamlit run src/dashboard/app.py
+PYTHONPATH=. uv run python scripts/migrate_to_medallion.py
 ```
 
-O Streamlit disponibilizará o dashboard localmente, normalmente em:
+Ele é idempotente e pode ser executado novamente com segurança.
 
-```text
-http://localhost:8501
-```
+## Limitações atuais
 
----
+- Os thresholds do sinal ainda não foram calibrados historicamente.
+- O horário das notícias ainda precisa de uma política explícita de corte por
+  sessão de negociação.
+- O histórico bronze anterior à migração não existe e não é reconstruído a
+  partir dos dados normalizados.
+- Os experimentos são evidência inicial e não constituem uma estratégia de
+  investimento.

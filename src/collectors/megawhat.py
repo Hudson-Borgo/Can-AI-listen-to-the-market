@@ -2,11 +2,12 @@
 
 import feedparser
 import yaml
+from src.paths import PROJECT_ROOT
 #from bs4 import BeautifulSoup
 
 
 #efine o caminho do arquivo de configuração do site
-CONFIG_PATH = "config/sites/megawhat.yaml"
+CONFIG_PATH = PROJECT_ROOT / "config" / "sites" / "megawhat.yaml"
 
 
 #le o arquivo YAML dps carrega as configurações em um dicionario

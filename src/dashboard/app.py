@@ -2,8 +2,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from src.dashboard.data import load_energy_news
-from src.signals.aggregate import calculate_daily_signals
+from src.dashboard.data import load_daily_signals, load_energy_news
 
 
 # ============================================================
@@ -22,16 +21,14 @@ st.set_page_config(
 # ============================================================
 # Carrega:
 #
-# 1. O CSV enriquecido pelo LLM:
-#    data/processed/energy_br.csv
+# 1. Notícias normalizadas e avaliações do LLM na camada silver.
 #
-# 2. A serie diaria calculada pelo Signal Aggregator:
-#    src/signals/aggregate.py
+# 2. A série diária persistida na camada gold.
 # ============================================================
 
 try:
     news = load_energy_news()
-    daily_signals = calculate_daily_signals("energy_br")
+    daily_signals = load_daily_signals()
 
 except Exception as error:
     st.error(f"Unable to load market data: {error}")
@@ -76,7 +73,7 @@ with st.sidebar:
     st.divider()
 
     st.subheader("Market")
-    st.markdown("**Energy Brazil**")
+    st.markdown("**BBCE eHub — M+1**")
 
     st.divider()
 
@@ -92,7 +89,7 @@ with st.sidebar:
     st.divider()
 
     st.caption("Current dataset")
-    st.code("energy_br.csv")
+    st.code("silver + gold")
 
 
 # ============================================================
@@ -127,11 +124,11 @@ average_relevance = float(
 # HEADER
 # ============================================================
 
-st.title("Brazilian Energy Market")
+st.title("Brazilian Electricity Market")
 
 st.caption(
     "AI-powered monitoring of news sentiment and "
-    "market signals for the Brazilian energy sector."
+    "signals for the BBCE eHub M+1 daily closing price."
 )
 
 st.divider()

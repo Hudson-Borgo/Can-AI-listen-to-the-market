@@ -1,3 +1,6 @@
+PROMPT_VERSION = "energy-price-next-session-v1"
+
+
 SYSTEM_PROMPT = """
 Você é um analista de mercado especializado no mercado brasileiro de energia elétrica.
 

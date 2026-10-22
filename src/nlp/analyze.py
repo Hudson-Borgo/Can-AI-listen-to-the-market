@@ -4,9 +4,10 @@ import os
 from src.nlp.client import get_client
 
 
-MODEL = os.environ.get(
-    "AZURE_OPENAI_MODEL",
-    "gpt-5.4-mini",
+MODEL = (
+    os.environ.get("AZURE_OPENAI_MODEL")
+    or os.environ.get("AZURE_OPENAI_DEPLOYMENT")
+    or "gpt-5.4-mini"
 )
 
 

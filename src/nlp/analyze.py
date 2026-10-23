@@ -15,9 +15,11 @@ def analyze_news(
     title: str,
     summary: str,
     system_prompt: str,
+    client=None,
 ) -> dict:
 
-    client = get_client()
+    if client is None:
+        client = get_client()
 
     user_input = f"""
 Título:

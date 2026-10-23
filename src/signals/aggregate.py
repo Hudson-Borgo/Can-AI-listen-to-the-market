@@ -1,115 +1,78 @@
-from pathlib import Path
-
 import pandas as pd
 
-
-DATA_PATH = Path("data/processed")
+from src import console
+from src.paths import (
+    ENERGY_NEWS_PATH,
+    ENERGY_NEWS_SCORES_PATH,
+    ENERGY_NEWS_SIGNAL_PATH,
+)
 
 
 def classify_signal(signal: float) -> str:
-    """
-    Converte o sinal numerico em uma classificacao de tendencia.
-
-    Os thresholds sao heuristicas definidas para:
-    abaixo de -0.15  -> NEGATIVE
-    entre -0.15 e 0.15 -> NEUTRAL
-    acima de 0.15 -> POSITIVE
-    """
-
     if signal > 0.15:
         return "POSITIVE"
-
     if signal < -0.15:
         return "NEGATIVE"
-
     return "NEUTRAL"
 
 
-def calculate_daily_signals(category: str) -> pd.DataFrame:
-    """
-    Calcula o sinal diario de mercado para uma categoria.
+def load_scored_energy_news() -> pd.DataFrame:
+    """Join normalized news to the latest available analysis per article."""
 
-    Formula:
-
-        signal =
-            sum(score * relevance)
-            ----------------------
-               sum(relevance)
-
-    Apenas noticias que ja passaram pela analise do LLM
-    sao consideradas.
-
-    A data de referencia e published_at, ou seja,
-    o dia em que a noticia foi publicada.
-    """
-
-    csv_path = DATA_PATH / f"{category}.csv"
-
-    if not csv_path.exists():
+    if not ENERGY_NEWS_PATH.exists():
+        raise FileNotFoundError(f"News dataset not found: {ENERGY_NEWS_PATH}")
+    if not ENERGY_NEWS_SCORES_PATH.exists():
         raise FileNotFoundError(
-            f"Dataset not found: {csv_path}"
+            f"NLP scores dataset not found: {ENERGY_NEWS_SCORES_PATH}"
         )
 
-    df = pd.read_csv(csv_path)
+    news = pd.read_csv(ENERGY_NEWS_PATH)
+    scores = pd.read_csv(ENERGY_NEWS_SCORES_PATH)
 
-    # ---------------------------------------------------------
-    # Considera apenas noticias analisadas pelo LLM
-    # ---------------------------------------------------------
+    scores["_row_order"] = range(len(scores))
+    scores["_analyzed_at"] = pd.to_datetime(
+        scores["analyzed_at"], utc=True, errors="coerce"
+    )
+    latest_scores = (
+        scores.sort_values(
+            ["article_id", "_analyzed_at", "_row_order"],
+            na_position="first",
+        )
+        .drop_duplicates("article_id", keep="last")
+        .drop(columns=["_row_order", "_analyzed_at"])
+    )
 
-    analyzed = df.dropna(
-        subset=[
-            "published_at",
-            "score",
-            "relevance",
-        ]
+    return news.merge(
+        latest_scores,
+        on="article_id",
+        how="inner",
+        validate="one_to_one",
+    )
+
+
+def calculate_daily_signals(persist: bool = False) -> pd.DataFrame:
+    """Calculate the daily news signal for Brazilian electricity prices."""
+
+    analyzed = load_scored_energy_news()
+    analyzed["score"] = pd.to_numeric(analyzed["score"], errors="coerce")
+    analyzed["relevance"] = pd.to_numeric(
+        analyzed["relevance"], errors="coerce"
+    )
+    analyzed["published_at"] = pd.to_datetime(
+        analyzed["published_at"], utc=True, errors="coerce"
+    )
+    analyzed = analyzed.dropna(
+        subset=["published_at", "score", "relevance"]
     ).copy()
 
     if analyzed.empty:
-        raise ValueError(
-            f"No analyzed articles found for category: {category}"
-        )
+        raise ValueError("No analyzed Brazilian energy news found.")
 
-    # ---------------------------------------------------------
-    # Converte published_at para datetime
-    # ---------------------------------------------------------
-
-    analyzed["published_at"] = pd.to_datetime(
-        analyzed["published_at"],
-        utc=True,
-    )
-
-    # ---------------------------------------------------------
-    # Extrai apenas o dia da publicacao
-    #
-    # Exemplo:
-    # 2026-08-19T15:30:13+00:00
-    #              ↓
-    # 2026-08-19
-    # ---------------------------------------------------------
-
-    analyzed["date"] = (
-        analyzed["published_at"]
-        .dt.date
-    )
-
-    # ---------------------------------------------------------
-    # Calcula a contribuicao de cada noticia
-    #
-    # score × relevance
-    # ---------------------------------------------------------
-
-    analyzed["weighted_score"] = (
-        analyzed["score"]
-        * analyzed["relevance"]
-    )
-
-    # ---------------------------------------------------------
-    # Agrupa todas as noticias pelo dia de publicacao
-    # ---------------------------------------------------------
+    analyzed["date"] = analyzed["published_at"].dt.date
+    analyzed["weighted_score"] = analyzed["score"] * analyzed["relevance"]
 
     daily = (
-        analyzed
-        .groupby("date")
+        analyzed.groupby("date")
         .agg(
             articles=("score", "count"),
             weighted_sum=("weighted_score", "sum"),
@@ -118,120 +81,54 @@ def calculate_daily_signals(category: str) -> pd.DataFrame:
         )
         .reset_index()
     )
-
-    # ---------------------------------------------------------
-    # Calcula o sinal diario
-    #
-    # sum(score × relevance)
-    # ----------------------
-    #    sum(relevance)
-    # ---------------------------------------------------------
-
-    daily["signal"] = (
-        daily["weighted_sum"]
-        / daily["total_relevance"]
+    daily["signal"] = 0.0
+    has_relevance = daily["total_relevance"] > 0
+    daily.loc[has_relevance, "signal"] = (
+        daily.loc[has_relevance, "weighted_sum"]
+        / daily.loc[has_relevance, "total_relevance"]
     )
-
-    # ---------------------------------------------------------
-    # Converte o valor numerico para uma tendencia
-    # ---------------------------------------------------------
-
-    daily["trend"] = (
-        daily["signal"]
-        .apply(classify_signal)
-    )
-
-    # ---------------------------------------------------------
-    # Arredonda apenas para apresentacao
-    # ---------------------------------------------------------
-
+    daily["trend"] = daily["signal"].apply(classify_signal)
     daily["signal"] = daily["signal"].round(3)
+    daily["average_relevance"] = daily["average_relevance"].round(3)
 
-    daily["average_relevance"] = (
-        daily["average_relevance"]
-        .round(3)
-    )
-
-    # ---------------------------------------------------------
-    # Mantemos apenas as informacoes que interessam
-    # para o indicador
-    # ---------------------------------------------------------
-
-    return daily[
-        [
-            "date",
-            "articles",
-            "average_relevance",
-            "signal",
-            "trend",
-        ]
+    result = daily[
+        ["date", "articles", "average_relevance", "signal", "trend"]
     ]
 
+    if persist:
+        ENERGY_NEWS_SIGNAL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = ENERGY_NEWS_SIGNAL_PATH.with_suffix(".csv.tmp")
+        result.to_csv(temporary_path, index=False)
+        temporary_path.replace(ENERGY_NEWS_SIGNAL_PATH)
 
-def main():
-    category = "energy_br"
+    return result
 
-    print("\n" + "=" * 70)
-    print("  ENERGY MARKET SIGNAL")
-    print("=" * 70)
 
-    # Calcula toda a serie historica disponivel.
-    daily_signals = calculate_daily_signals(category)
+def calculate_and_present(show_header: bool = True) -> pd.DataFrame:
+    """Persist and display the recent daily signal history."""
 
-    # ---------------------------------------------------------
-    # SERIES HISTORY
-    # ---------------------------------------------------------
-
-    print("\n  DAILY SIGNAL HISTORY")
-    print("-" * 70)
-
-    print(
-        daily_signals.to_string(
-            index=False
+    if show_header:
+        console.banner(
+            "PREVER",
+            "Cálculo do sinal de mercado",
+            "Notícias avaliadas → sinal diário BBCE eHub M+1",
         )
-    )
 
-    # ---------------------------------------------------------
-    # CURRENT SIGNAL
-    #
-    # O ultimo dia disponivel no dataset representa
-    # o sinal mais recente do mercado.
-    # ---------------------------------------------------------
-
+    daily_signals = calculate_daily_signals(persist=True)
     current = daily_signals.iloc[-1]
 
-    print("\n" + "=" * 70)
-    print("  CURRENT MARKET SIGNAL")
-    print("=" * 70)
+    console.label("Mercado", "Energia elétrica — BBCE eHub M+1")
+    console.label("Fórmula", "Σ(score × relevância) / Σ(relevância)")
+    console.label("Destino gold", ENERGY_NEWS_SIGNAL_PATH)
+    console.signal_table(daily_signals)
+    console.final_signal(current)
+    console.success("Sinal diário atualizado na camada gold")
 
-    print(f"\n  Category          : {category}")
-    print(f"  Reference date    : {current['date']}")
-    print(f"  Articles analyzed : {current['articles']}")
-    print(
-        f"  Average relevance : "
-        f"{current['average_relevance']:.3f}"
-    )
+    return daily_signals
 
-    print("\n  Weighted formula:")
-    print("  Σ(score × relevance) / Σ(relevance)")
 
-    print(
-        f"\n  MARKET SIGNAL     : "
-        f"{current['signal']:+.3f}"
-    )
-
-    print(
-        f"  MARKET TREND      : "
-        f"{current['trend']}"
-    )
-
-    print("\n" + "-" * 70)
-    print("  -1.0              0.0              +1.0")
-    print("  NEGATIVE        NEUTRAL          POSITIVE")
-    print("-" * 70)
-
-    print("\n  ✓ DAILY MARKET SIGNAL CALCULATED")
-    print("=" * 70 + "\n")
+def main() -> None:
+    calculate_and_present()
 
 
 if __name__ == "__main__":

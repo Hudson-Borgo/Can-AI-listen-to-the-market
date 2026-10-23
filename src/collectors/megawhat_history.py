@@ -9,7 +9,7 @@ from urllib3.util.retry import Retry
 import requests
 from bs4 import BeautifulSoup
 
-from src.repository.news_repository import save_news
+from src.repository.news_repository import save_news, save_raw_news
 
 
 BASE_URL = "https://megawhat.uol.com.br/ultimas-noticias/"
@@ -330,15 +330,19 @@ def main():
         )
         return
 
-    result = save_news(
-        news
-    )
+    bronze_result = save_raw_news(news)
+    result = save_news(news)
 
     print("\n" + "-" * 70)
 
     print(
         f"Received   : "
         f"{result['received']}"
+    )
+
+    print(
+        f"Bronze new : "
+        f"{bronze_result['inserted']}"
     )
 
     print(

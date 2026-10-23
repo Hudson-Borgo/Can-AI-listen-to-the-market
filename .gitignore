@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 
 # Virtual environment
+.venv/
 venv/
 
 # Environment variables
@@ -13,7 +14,5 @@ venv/
 
 # Windows
 Thumbs.db
-Desktop.ini.DS_Store
-
-.DS_Store
+Desktop.ini
 .DS_Store

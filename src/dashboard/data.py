@@ -1,39 +1,30 @@
-from pathlib import Path
-
 import pandas as pd
 
-
-DATA_PATH = Path("data/processed/energy_br.csv")
+from src.paths import ENERGY_NEWS_SIGNAL_PATH
+from src.signals.aggregate import load_scored_energy_news
 
 
 def load_energy_news() -> pd.DataFrame:
-    """
-    Carrega o dataset de noticias de energia ja processado pelo pipeline.
-    """
+    """Load normalized news joined to its latest LLM analysis."""
 
-    if not DATA_PATH.exists():
+    news = load_scored_energy_news()
+    news["score"] = pd.to_numeric(news["score"], errors="coerce")
+    news["relevance"] = pd.to_numeric(news["relevance"], errors="coerce")
+    news["published_at"] = pd.to_datetime(
+        news["published_at"], utc=True, errors="coerce"
+    )
+    return news
+
+
+def load_daily_signals() -> pd.DataFrame:
+    """Load the persisted gold daily signal dataset."""
+
+    if not ENERGY_NEWS_SIGNAL_PATH.exists():
         raise FileNotFoundError(
-            f"Dataset not found: {DATA_PATH}"
+            f"Daily signal dataset not found: {ENERGY_NEWS_SIGNAL_PATH}. "
+            "Run `python -m src.signals.aggregate` first."
         )
 
-    df = pd.read_csv(DATA_PATH)
-
-    # Converte as colunas numericas produzidas pelo LLM.
-    df["score"] = pd.to_numeric(
-        df["score"],
-        errors="coerce",
-    )
-
-    df["relevance"] = pd.to_numeric(
-        df["relevance"],
-        errors="coerce",
-    )
-
-    # Converte a data de publicacao.
-    df["published_at"] = pd.to_datetime(
-        df["published_at"],
-        utc=True,
-        errors="coerce",
-    )
-
-    return df
+    signals = pd.read_csv(ENERGY_NEWS_SIGNAL_PATH)
+    signals["date"] = pd.to_datetime(signals["date"], errors="coerce").dt.date
+    return signals

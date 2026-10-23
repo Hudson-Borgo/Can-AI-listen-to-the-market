@@ -3,6 +3,8 @@ type: rss
 url: https://megawhat.uol.com.br/feed/
 category: energy_br
 language: pt-BR
+market: brazilian_electricity
+target: bbce_ehub_m1_daily_closing_price
 
 history:
   url: https://megawhat.uol.com.br/ultimas-noticias/

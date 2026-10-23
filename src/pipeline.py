@@ -8,18 +8,18 @@ def run_pipeline(limit: int = 10) -> None:
     """Run the Brazilian electricity news pipeline end to end."""
 
     console.banner(
-        "DEMO AO VIVO",
-        "Can AI Listen to the Market?",
-        "OUVIR notícias → SENTIR o mercado → PREVER tendências",
+        "Início Pipeline",
+        "",
+        "Capturar notícias → Analizar  → Calcular tendências",
     )
 
-    console.section("1/3 · OUVIR", "Coletar e estruturar as notícias")
+    console.section("1/3 · Capturar notícias", "Coletar e estruturar as notícias")
     collect_and_store(limit=limit, show_header=False)
 
-    console.section("2/3 · SENTIR", "Analisar o impacto com IA")
+    console.section("2/3 · Analizar as Notícias", "Analisar o impacto com IA")
     process_energy_news(show_header=False)
 
-    console.section("3/3 · PREVER", "Consolidar o sinal diário")
+    console.section("3/3 · Calcular Sinais", "Consolidar o sinal diário")
     calculate_and_present(show_header=False)
 
     console.divider("═", "blue")

@@ -5,6 +5,7 @@ description = "POC para monitoramento de notícias e geração de sinal de merca
 requires-python = ">=3.11"
 dependencies = [
     "beautifulsoup4>=4.15.0",
+    "click>=8.4.0",
     "feedparser>=6.0.14",
     "matplotlib>=3.11.1",
     "mlflow>=3.3.0",

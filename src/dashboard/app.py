@@ -358,7 +358,7 @@ chart = (
 
 st.altair_chart(
     chart,
-    use_container_width=True,
+    width="stretch",
 )
 
 

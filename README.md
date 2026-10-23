@@ -127,21 +127,44 @@ AZURE_OPENAI_ENDPOINT=https://YOUR_RESOURCE_NAME.openai.azure.com/
 AZURE_OPENAI_MODEL=gpt-5.4-mini
 ```
 
-## Execução
+## Demo ao vivo
 
-Pipeline completo:
+Todos os comandos exibem o progresso no terminal, notícia por notícia, usando
+as três etapas da apresentação: **OUVIR → SENTIR → PREVER**.
 
-```bash
-uv run python -m src.pipeline
-```
-
-Componentes isolados:
+Pipeline completa:
 
 ```bash
-uv run python -m src.collectors.megawhat
-uv run python -m src.nlp.process_energy_news
-uv run python -m src.signals.aggregate
+uv run python -m src run
 ```
+
+Para limitar a coleta a cinco notícias durante uma apresentação:
+
+```bash
+uv run python -m src run --limit 5
+```
+
+Cada componente também pode ser demonstrado separadamente:
+
+```bash
+# OUVIR: coleta, deduplicação e persistência bronze/silver
+uv run python -m src collect --limit 5
+
+# SENTIR: IA analisa somente as notícias ainda pendentes
+uv run python -m src analyze
+
+# SENTIR em uma demo determinística: reexibe 5 avaliações já salvas
+uv run python -m src analyze --replay 5
+
+# PREVER: agrega as avaliações e atualiza o sinal diário gold
+uv run python -m src signal
+```
+
+O coletor pode receber notícias já existentes no CSV. Nesse caso elas aparecem
+na tela, mas são identificadas como duplicadas e não são gravadas novamente. A
+análise com IA é incremental: para a versão atual de modelo e prompt, somente
+os `article_id` ainda não avaliados consomem a API. O modo `--replay` é somente
+leitura: não chama a API e não altera os CSVs nem o sinal oficial.
 
 Coleta histórica:
 
@@ -154,11 +177,18 @@ uv run python -m src.collectors.megawhat_history \
 Dashboard:
 
 ```bash
-PYTHONPATH=. uv run streamlit run src/dashboard/app.py
+uv run python -m src dashboard
 ```
 
 O dashboard lê as notícias e scores da camada silver e o sinal diário persistido
-na camada gold.
+na camada gold. O launcher usa caminhos absolutos, portanto o dashboard não
+depende da variável `PYTHONPATH` nem do diretório em que o comando foi iniciado.
+
+Para ver todos os comandos e opções:
+
+```bash
+uv run python -m src --help
+```
 
 ## Migração do layout legado
 
@@ -167,7 +197,7 @@ conteúdo das notícias, remove duplicatas por fonte/URL e não chama fontes
 externas nem o LLM:
 
 ```bash
-PYTHONPATH=. uv run python scripts/migrate_to_medallion.py
+uv run python scripts/migrate_to_medallion.py
 ```
 
 Ele é idempotente e pode ser executado novamente com segurança.

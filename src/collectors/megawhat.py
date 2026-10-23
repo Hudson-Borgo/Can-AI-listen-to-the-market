@@ -1,66 +1,115 @@
-#from html import unescape
+from collections.abc import Callable
 
+import click
 import feedparser
+import requests
 import yaml
+
+from src import console
+from src.normalization.megawhat import normalize_news
 from src.paths import PROJECT_ROOT
-#from bs4 import BeautifulSoup
+from src.repository.news_repository import save_news, save_raw_news
 
 
-#efine o caminho do arquivo de configuração do site
 CONFIG_PATH = PROJECT_ROOT / "config" / "sites" / "megawhat.yaml"
 
-
-#le o arquivo YAML dps carrega as configurações em um dicionario
-with open(CONFIG_PATH, "r", encoding="utf-8") as file:
+with CONFIG_PATH.open("r", encoding="utf-8") as file:
     cfg = yaml.safe_load(file)
 
-# Pega a URL do RSS que esta salva na configuração
 RSS_URL = cfg["url"]
+ArticleCallback = Callable[[int, int, dict], None]
 
 
-# Define uma funcao para coletar noticias.
-def collect_news(limit: int = 10) -> list[dict]:
-    """Coleta noticias do feed RSS do site MegaWhat."""
-    #feed RSS configurado.
-    feed = feedparser.parse(cfg["url"])
+def collect_news(
+    limit: int = 10,
+    on_article: ArticleCallback | None = None,
+) -> list[dict]:
+    """Collect the most recent articles from the MegaWhat RSS feed."""
 
-    # Cria uma lista vazia para armazenar as noticias.
+    response = requests.get(
+        RSS_URL,
+        timeout=30,
+        headers={"User-Agent": "Can-AI-Listen-to-the-Market/0.1"},
+    )
+    response.raise_for_status()
+    feed = feedparser.parse(response.content)
+    entries = list(feed.entries[:limit])
+
+    if not entries:
+        detail = getattr(feed, "bozo_exception", "RSS feed returned no entries")
+        raise RuntimeError(f"MegaWhat RSS could not be read: {detail}")
+
     news = []
+    total = len(entries)
 
-    # Percorre as noticias ate o limite informado.
-    for entry in feed.entries[:limit]:
-        # Cria um dicionario com os dados da noticia.
+    for index, entry in enumerate(entries, start=1):
         item = {
-            # Adiciona o nome do site.
             "source": cfg["site"],
-            # Adiciona o titulo da noticia.
             "title": entry.get("title", ""),
-            # Adiciona o resumo da noticia.
             "summary": entry.get("summary", ""),
-            # Adiciona o link da noticia.
             "url": entry.get("link", ""),
-            # Adiciona a data de publicacao.
             "published_at": entry.get("published", ""),
             "category": cfg["category"],
         }
-
-        # Adiciona a noticia a lista final.
         news.append(item)
+        if on_article:
+            on_article(index, total, item)
 
-    # Retorna todas as noticias coletadas.
     return news
 
-from src.normalization.megawhat import normalize_news
-def main():
-    news = collect_news(limit=3)
 
-    for item in news:
-        normalized = normalize_news(item)
+def collect_and_store(limit: int = 10, show_header: bool = True) -> dict:
+    """Collect, display, normalize and persist the most recent articles."""
 
-        print(normalized)
-        print("-" * 80)
+    if show_header:
+        console.banner(
+            "OUVIR",
+            "Coleta de notícias",
+            "MegaWhat → bronze → silver",
+        )
+
+    console.label("Fonte", "MegaWhat")
+    console.label("Feed", RSS_URL, "bright_cyan")
+    console.label("Limite", limit)
+    console.divider()
+
+    try:
+        raw_news = collect_news(limit=limit, on_article=console.article_collected)
+    except Exception as exc:
+        console.error(f"Falha na coleta: {exc}")
+        raise
+
+    bronze_result = save_raw_news(raw_news)
+    normalized_news = [normalize_news(item) for item in raw_news]
+    silver_result = save_news(normalized_news)
+
+    console.divider()
+    console.success(f"{len(raw_news)} notícias recebidas do feed")
+    console.label("Novas na bronze", bronze_result["inserted"], "green")
+    console.label("Novas na silver", silver_result["inserted"], "green")
+    console.label("Duplicadas", silver_result["duplicates"], "yellow")
+    console.label("Total silver", silver_result["total"])
+
+    return {
+        "raw_news": raw_news,
+        "bronze": bronze_result,
+        "silver": silver_result,
+    }
 
 
-# Executa a função main quando o arquivo é rodado diretamente
+@click.command()
+@click.option(
+    "--limit",
+    default=10,
+    show_default=True,
+    type=click.IntRange(min=1),
+    help="Quantidade máxima de notícias recentes.",
+)
+def main(limit: int) -> None:
+    """Collect and persist MegaWhat news."""
+
+    collect_and_store(limit=limit)
+
+
 if __name__ == "__main__":
     main()

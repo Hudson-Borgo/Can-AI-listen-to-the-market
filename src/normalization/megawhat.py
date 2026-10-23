@@ -1,11 +1,8 @@
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html import unescape
+
 from bs4 import BeautifulSoup
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-
-
 
 def clean_html(value: str | None) -> str:
     """Remove tags HTML e normaliza o texto."""
@@ -49,7 +46,7 @@ def normalize_published_at(value: str) -> str:
 
 
 def normalize_news(item: dict) -> dict:
-    """ Normaliza os campos de uma noticia coletada do feed RSS do site MegaWhat."""
+    """Normaliza os campos de uma notícia do feed RSS do MegaWhat."""
     # Retorna um dicionario com os dados padronizados.
     return {
         # Mantem o nome da fonte da noticia.

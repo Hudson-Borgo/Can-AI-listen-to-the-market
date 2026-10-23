@@ -1,54 +1,34 @@
-from src.collectors.megawhat import collect_news
-from src.nlp.analyze import MODEL
+from src import console
+from src.collectors.megawhat import collect_and_store
 from src.nlp.process_energy_news import process_energy_news
-from src.normalization.megawhat import normalize_news
-from src.repository.news_repository import save_news, save_raw_news
-from src.signals.aggregate import calculate_daily_signals
+from src.signals.aggregate import calculate_and_present
+
+
+def run_pipeline(limit: int = 10) -> None:
+    """Run the Brazilian electricity news pipeline end to end."""
+
+    console.banner(
+        "DEMO AO VIVO",
+        "Can AI Listen to the Market?",
+        "OUVIR notícias → SENTIR o mercado → PREVER tendências",
+    )
+
+    console.section("1/3 · OUVIR", "Coletar e estruturar as notícias")
+    collect_and_store(limit=limit, show_header=False)
+
+    console.section("2/3 · SENTIR", "Analisar o impacto com IA")
+    process_energy_news(show_header=False)
+
+    console.section("3/3 · PREVER", "Consolidar o sinal diário")
+    calculate_and_present(show_header=False)
+
+    console.divider("═", "blue")
+    console.success("Pipeline concluída — dashboard pronto para a apresentação")
+    console.divider("═", "blue")
 
 
 def main() -> None:
-    """Run the Brazilian electricity news pipeline end to end."""
-
-    print("\n" + "=" * 70)
-    print("  BRAZILIAN ELECTRICITY MARKET INTELLIGENCE")
-    print("  Target: BBCE eHub M+1 daily closing price")
-    print("=" * 70)
-
-    print("\n[1/6] COLLECTING MEGAWHAT NEWS")
-    raw_news = collect_news()
-    print(f"      Collected : {len(raw_news)}")
-
-    print("\n[2/6] SAVING BRONZE SOURCE RECORDS")
-    bronze_result = save_raw_news(raw_news)
-    print(f"      New        : {bronze_result['inserted']}")
-    print(f"      Duplicates : {bronze_result['duplicates']}")
-    print(f"      Total      : {bronze_result['total']}")
-
-    print("\n[3/6] NORMALIZING NEWS")
-    normalized_news = [normalize_news(item) for item in raw_news]
-    print(f"      Normalized : {len(normalized_news)}")
-
-    print("\n[4/6] UPDATING SILVER NEWS DATASET")
-    silver_result = save_news(normalized_news)
-    print(f"      New        : {silver_result['inserted']}")
-    print(f"      Duplicates : {silver_result['duplicates']}")
-    print(f"      Total      : {silver_result['total']}")
-
-    print("\n[5/6] ANALYZING IMPACT ON THE M+1 PRICE")
-    print(f"      Model      : {MODEL}")
-    process_energy_news(show_header=False)
-
-    print("\n[6/6] PERSISTING GOLD DAILY SIGNAL")
-    daily_signals = calculate_daily_signals(persist=True)
-    current = daily_signals.iloc[-1]
-    print(f"      Date       : {current['date']}")
-    print(f"      Articles   : {current['articles']}")
-    print(f"      Signal     : {current['signal']:+.3f}")
-    print(f"      Trend      : {current['trend']}")
-
-    print("\n" + "=" * 70)
-    print("  ✓ PIPELINE COMPLETED")
-    print("=" * 70 + "\n")
+    run_pipeline()
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import pandas as pd
 
+from src import console
 from src.paths import (
     ENERGY_NEWS_PATH,
     ENERGY_NEWS_SCORES_PATH,
@@ -103,20 +104,31 @@ def calculate_daily_signals(persist: bool = False) -> pd.DataFrame:
     return result
 
 
-def main() -> None:
+def calculate_and_present(show_header: bool = True) -> pd.DataFrame:
+    """Persist and display the recent daily signal history."""
+
+    if show_header:
+        console.banner(
+            "PREVER",
+            "Cálculo do sinal de mercado",
+            "Notícias avaliadas → sinal diário BBCE eHub M+1",
+        )
+
     daily_signals = calculate_daily_signals(persist=True)
     current = daily_signals.iloc[-1]
 
-    print("\n" + "=" * 70)
-    print("  BRAZILIAN ELECTRICITY MARKET SIGNAL — BBCE eHub M+1")
-    print("=" * 70)
-    print(f"  Reference date    : {current['date']}")
-    print(f"  Articles analyzed : {current['articles']}")
-    print(f"  Average relevance : {current['average_relevance']:.3f}")
-    print(f"  Market signal     : {current['signal']:+.3f}")
-    print(f"  Market trend      : {current['trend']}")
-    print(f"  Saved to          : {ENERGY_NEWS_SIGNAL_PATH}")
-    print("=" * 70 + "\n")
+    console.label("Mercado", "Energia elétrica — BBCE eHub M+1")
+    console.label("Fórmula", "Σ(score × relevância) / Σ(relevância)")
+    console.label("Destino gold", ENERGY_NEWS_SIGNAL_PATH)
+    console.signal_table(daily_signals)
+    console.final_signal(current)
+    console.success("Sinal diário atualizado na camada gold")
+
+    return daily_signals
+
+
+def main() -> None:
+    calculate_and_present()
 
 
 if __name__ == "__main__":

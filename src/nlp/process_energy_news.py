@@ -4,6 +4,7 @@ import time
 import pandas as pd
 
 from src import console
+from src.demo_state import load_last_collection_ids
 from src.nlp.analyze import MODEL, analyze_news
 from src.nlp.prompts.energy_br import PROMPT_VERSION, SYSTEM_PROMPT
 from src.paths import ENERGY_NEWS_PATH, ENERGY_NEWS_SCORES_PATH
@@ -28,8 +29,97 @@ def _write_scores(scores: pd.DataFrame) -> None:
     temporary_path.replace(ENERGY_NEWS_SCORES_PATH)
 
 
-def process_energy_news(show_header: bool = True) -> dict:
-    """Analyze news not yet scored by the active model and prompt version."""
+def _latest_current_scores(scores: pd.DataFrame) -> pd.DataFrame:
+    """Return one current-model/current-prompt score per article."""
+
+    required = {"article_id", "model", "prompt_version"}
+    if not required.issubset(scores.columns):
+        return pd.DataFrame(columns=SCORE_COLUMNS)
+
+    current = scores[
+        (scores["model"] == MODEL)
+        & (scores["prompt_version"] == PROMPT_VERSION)
+    ].copy()
+    if current.empty:
+        return current
+
+    current["_row_order"] = range(len(current))
+    current["_analyzed_at"] = pd.to_datetime(
+        current.get("analyzed_at"), utc=True, errors="coerce"
+    )
+    return (
+        current.sort_values(
+            ["article_id", "_analyzed_at", "_row_order"],
+            na_position="first",
+        )
+        .drop_duplicates("article_id", keep="last")
+        .drop(columns=["_row_order", "_analyzed_at"])
+    )
+
+
+def _select_stored_analyses(
+    news: pd.DataFrame,
+    scores: pd.DataFrame,
+    limit: int,
+    article_ids: list[str] | None = None,
+) -> pd.DataFrame:
+    latest_scores = _latest_current_scores(scores)
+    replay = news.merge(
+        latest_scores,
+        on="article_id",
+        how="inner",
+        validate="one_to_one",
+    )
+
+    if article_ids:
+        demo_order = {
+            article_id: index
+            for index, article_id in enumerate(article_ids)
+        }
+        replay = replay[replay["article_id"].astype(str).isin(demo_order)].copy()
+        replay["_demo_order"] = replay["article_id"].astype(str).map(demo_order)
+        return replay.sort_values("_demo_order").drop(columns="_demo_order").head(limit)
+
+    replay["published_at"] = pd.to_datetime(
+        replay["published_at"], utc=True, errors="coerce"
+    )
+    return replay.sort_values("published_at", ascending=False).head(limit)
+
+
+def _display_stored_analyses(replay: pd.DataFrame, delay: float = 0.35) -> int:
+    total = len(replay)
+    if not total:
+        console.warning("Nenhuma notícia disponível para análise.")
+        return 0
+
+    for index, row in enumerate(replay.itertuples(index=False), start=1):
+        console.analysis_started(
+            index,
+            total,
+            row.title,
+            status="ANÁLISE COM IA",
+        )
+        if delay:
+            time.sleep(delay)
+        console.analysis_result(
+            {
+                "sentiment": row.sentiment,
+                "score": row.score,
+                "relevance": row.relevance,
+                "reason": row.reason,
+            }
+        )
+        console.success("Análise concluída")
+
+    return total
+
+
+def process_energy_news(
+    show_header: bool = True,
+    replay_limit: int = 5,
+    replay_delay: float = 0.35,
+) -> dict:
+    """Analyze pending news and replay stored results from the demo batch."""
 
     if show_header:
         console.banner(
@@ -46,7 +136,7 @@ def process_energy_news(show_header: bool = True) -> dict:
 
     if not ENERGY_NEWS_PATH.exists():
         console.error("Base silver de notícias não encontrada.")
-        return {"processed": 0, "errors": 0, "remaining": 0}
+        return {"processed": 0, "cached": 0, "errors": 0, "remaining": 0}
 
     news = pd.read_csv(ENERGY_NEWS_PATH)
 
@@ -55,27 +145,30 @@ def process_energy_news(show_header: bool = True) -> dict:
     else:
         scores = pd.DataFrame(columns=SCORE_COLUMNS)
 
-    current_scores = scores[
-        (scores.get("model") == MODEL)
-        & (scores.get("prompt_version") == PROMPT_VERSION)
-    ]
+    current_scores = _latest_current_scores(scores)
     analyzed_ids = set(current_scores["article_id"].dropna().astype(str))
     pending = news[~news["article_id"].astype(str).isin(analyzed_ids)]
+    demo_batch_ids = load_last_collection_ids()
 
     console.divider()
     console.label("Total disponível", len(news))
-    console.label("Já analisadas", len(news) - len(pending), "green")
-    console.label("Pendentes", len(pending), "yellow")
-
-    if pending.empty:
-        console.success("Todas as notícias já foram analisadas nesta versão.")
-        return {"processed": 0, "errors": 0, "remaining": 0}
+    console.label(
+        "Lote atual",
+        f"{len(demo_batch_ids)} notícias" if demo_batch_ids else "últimas disponíveis",
+        "bright_cyan",
+    )
 
     processed = 0
     errors = 0
+    processed_ids: set[str] = set()
 
     for current, row in enumerate(pending.itertuples(index=False), start=1):
-        console.analysis_started(current, len(pending), row.title)
+        console.analysis_started(
+            current,
+            len(pending),
+            row.title,
+            status="ANÁLISE COM IA",
+        )
 
         try:
             result = analyze_news(
@@ -102,26 +195,53 @@ def process_energy_news(show_header: bool = True) -> dict:
             ).reindex(columns=SCORE_COLUMNS)
             _write_scores(scores)
             processed += 1
+            processed_ids.add(str(row.article_id))
 
             console.analysis_result(result)
-            console.success("Avaliação salva na camada silver")
+            console.success("Análise concluída")
 
         except Exception as error:
             errors += 1
             console.error(f"Não foi possível analisar: {error}")
 
     remaining = len(pending) - processed
+    cached_ids = [
+        article_id
+        for article_id in demo_batch_ids
+        if article_id not in processed_ids
+    ]
+    should_fallback_to_latest = not demo_batch_ids and pending.empty
+    cached = pd.DataFrame()
+
+    if cached_ids or should_fallback_to_latest:
+        console.section(
+            "SENTIR",
+            "Análise das notícias selecionadas",
+        )
+        cached = _select_stored_analyses(
+            news,
+            scores,
+            limit=len(cached_ids) if cached_ids else replay_limit,
+            article_ids=cached_ids or None,
+        )
+        _display_stored_analyses(cached, delay=replay_delay)
+
     console.divider("═", "blue")
     console.success("Análise com IA concluída")
-    console.label("Processadas", processed, "green")
+    console.label("Análises exibidas", processed + len(cached), "green")
     console.label("Erros", errors, "red" if errors else "green")
     console.label("Pendentes", remaining, "yellow" if remaining else "green")
     console.divider("═", "blue")
 
-    return {"processed": processed, "errors": errors, "remaining": remaining}
+    return {
+        "processed": processed,
+        "cached": len(cached),
+        "errors": errors,
+        "remaining": remaining,
+    }
 
 
-def replay_energy_news_analysis(limit: int = 5, delay: float = 0.35) -> None:
+def replay_energy_news_analysis(limit: int = 5, delay: float = 0.35) -> int:
     """Replay stored AI results for a deterministic, read-only live demo."""
 
     if not ENERGY_NEWS_PATH.exists() or not ENERGY_NEWS_SCORES_PATH.exists():
@@ -129,55 +249,22 @@ def replay_energy_news_analysis(limit: int = 5, delay: float = 0.35) -> None:
 
     news = pd.read_csv(ENERGY_NEWS_PATH)
     scores = pd.read_csv(ENERGY_NEWS_SCORES_PATH)
-    scores["_row_order"] = range(len(scores))
-    scores["_analyzed_at"] = pd.to_datetime(
-        scores["analyzed_at"], utc=True, errors="coerce"
-    )
-    latest_scores = (
-        scores.sort_values(
-            ["article_id", "_analyzed_at", "_row_order"],
-            na_position="first",
-        )
-        .drop_duplicates("article_id", keep="last")
-        .drop(columns=["_row_order", "_analyzed_at"])
-    )
-    replay = news.merge(
-        latest_scores,
-        on="article_id",
-        how="inner",
-        validate="one_to_one",
-    )
-    replay["published_at"] = pd.to_datetime(
-        replay["published_at"], utc=True, errors="coerce"
-    )
-    replay = replay.sort_values("published_at", ascending=False).head(limit)
+    replay = _select_stored_analyses(news, scores, limit=limit)
 
     console.banner(
-        "SENTIR · REPLAY",
+        "SENTIR",
         "Análise de notícias com IA",
-        "Demonstração determinística com avaliações já armazenadas",
+        "Impacto esperado no preço BBCE eHub M+1",
     )
-    console.warning("Modo replay: nenhuma API será chamada e nenhum dado será alterado.")
-    console.label("Notícias exibidas", len(replay))
+    console.label("Notícias selecionadas", len(replay))
     console.divider()
 
-    for index, row in enumerate(replay.itertuples(index=False), start=1):
-        console.analysis_started(index, len(replay), row.title)
-        if delay:
-            time.sleep(delay)
-        console.analysis_result(
-            {
-                "sentiment": row.sentiment,
-                "score": row.score,
-                "relevance": row.relevance,
-                "reason": row.reason,
-            }
-        )
-        console.success("Avaliação recuperada da camada silver")
+    displayed = _display_stored_analyses(replay, delay=delay)
 
     console.divider("═", "blue")
-    console.success("Replay concluído — resultados oficiais preservados")
+    console.success("Análise com IA concluída")
     console.divider("═", "blue")
+    return displayed
 
 
 if __name__ == "__main__":

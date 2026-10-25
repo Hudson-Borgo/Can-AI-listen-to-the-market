@@ -114,9 +114,25 @@ Os notebooks devem ser executados nesta ordem:
 
 O ambiente é gerenciado com [uv](https://docs.astral.sh/uv/):
 
+macOS/Linux:
+
 ```bash
 uv sync
 cp .env.example .env
+```
+
+Windows PowerShell:
+
+```powershell
+uv sync
+Copy-Item .env.example .env
+```
+
+Windows CMD:
+
+```bat
+uv sync
+copy .env.example .env
 ```
 
 Configure as credenciais do Microsoft Foundry/Azure OpenAI no `.env`:
@@ -129,8 +145,9 @@ AZURE_OPENAI_MODEL=gpt-5.4-mini
 
 ## Demo ao vivo
 
-Todos os comandos exibem o progresso no terminal, notícia por notícia, usando
-as três etapas da apresentação: **OUVIR → SENTIR → PREVER**.
+Todos os comandos exibem o progresso no terminal, notícia por notícia. A demo
+operacional cobre **OUVIR → SENTIR**; a etapa **PREVER** é apresentada nos
+notebooks de machine learning.
 
 Pipeline completa:
 
@@ -150,28 +167,34 @@ Cada componente também pode ser demonstrado separadamente:
 # OUVIR: coleta, deduplicação e persistência bronze/silver
 uv run python -m src collect --limit 5
 
-# SENTIR: IA analisa somente as notícias ainda pendentes
+# SENTIR: analisa novidades e mostra resultados existentes do último lote
 uv run python -m src analyze
 
 # SENTIR em uma demo determinística: reexibe 5 avaliações já salvas
 uv run python -m src analyze --replay 5
 
-# PREVER: agrega as avaliações e atualiza o sinal diário gold
+# SENTIR: consolida as avaliações numa feature diária na camada gold
 uv run python -m src signal
 ```
 
-O coletor pode receber notícias já existentes no CSV. Nesse caso elas aparecem
-na tela, mas são identificadas como duplicadas e não são gravadas novamente. A
-análise com IA é incremental: para a versão atual de modelo e prompt, somente
-os `article_id` ainda não avaliados consomem a API. O modo `--replay` é somente
-leitura: não chama a API e não altera os CSVs nem o sinal oficial.
+O sinal diário resume score e relevância das notícias. Ele é uma feature para
+os experimentos de previsão, e não uma previsão isolada. Para **PREVER**, use o
+notebook `03_classification_next_day_direction.ipynb`, que compara o mesmo
+modelo sem e com a feature de notícias. O notebook
+`04_time_series_sarimax_same_day_price.ipynb` é um exercício complementar de
+nowcasting do fechamento.
+
+O coletor registra localmente quais notícias apareceram no último lote. Ao rodar
+`analyze`, essas mesmas notícias percorrem a apresentação no terminal. Notícias
+novas chamam a LLM; notícias já analisadas exibem o resultado armazenado na
+silver, sem consumir novamente a API. Se ainda não houver um lote local, as
+cinco análises mais recentes são exibidas. O modo explícito `--replay` também é
+somente leitura e não altera os CSVs nem o sinal oficial.
 
 Coleta histórica:
 
 ```bash
-uv run python -m src.collectors.megawhat_history \
-  --start-date 2026-01-01 \
-  --end-date 2026-08-31
+uv run python -m src.collectors.megawhat_history --start-date 2026-01-01 --end-date 2026-08-31
 ```
 
 Dashboard:
@@ -189,6 +212,20 @@ Para ver todos os comandos e opções:
 ```bash
 uv run python -m src --help
 ```
+
+### Apresentação no Windows
+
+Os comandos da demo são idênticos no macOS, PowerShell e CMD porque os caminhos
+são montados com `pathlib` e o dashboard é iniciado sem comandos específicos de
+shell. Para reduzir riscos na apresentação:
+
+- use Windows Terminal ou PowerShell para preservar cores e caracteres UTF-8;
+- execute `uv sync` previamente na máquina Windows;
+- copie e configure o `.env` nessa máquina;
+- não mantenha os CSVs abertos no Excel durante a pipeline, pois o Windows pode
+  bloquear a atualização dos arquivos;
+- faça um ensaio com `uv run python -m src analyze --replay 5`, que não chama a
+  LLM e produz uma demonstração determinística.
 
 ## Migração do layout legado
 

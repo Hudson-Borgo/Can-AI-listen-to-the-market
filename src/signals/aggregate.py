@@ -109,9 +109,9 @@ def calculate_and_present(show_header: bool = True) -> pd.DataFrame:
 
     if show_header:
         console.banner(
-            "PREVER",
-            "Cálculo do sinal de mercado",
-            "Notícias avaliadas → sinal diário BBCE eHub M+1",
+            "SENTIR",
+            "Consolidação do sinal de notícias",
+            "Notícias avaliadas → feature diária para os modelos",
         )
 
     daily_signals = calculate_daily_signals(persist=True)
@@ -122,7 +122,7 @@ def calculate_and_present(show_header: bool = True) -> pd.DataFrame:
     console.label("Destino gold", ENERGY_NEWS_SIGNAL_PATH)
     console.signal_table(daily_signals)
     console.final_signal(current)
-    console.success("Sinal diário atualizado na camada gold")
+    console.success("Sinal de notícias atualizado na camada gold")
 
     return daily_signals
 

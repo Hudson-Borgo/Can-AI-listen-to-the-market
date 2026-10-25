@@ -6,6 +6,7 @@ import requests
 import yaml
 
 from src import console
+from src.demo_state import save_last_collection
 from src.normalization.megawhat import normalize_news
 from src.paths import PROJECT_ROOT
 from src.repository.news_repository import save_news, save_raw_news
@@ -82,6 +83,7 @@ def collect_and_store(limit: int = 10, show_header: bool = True) -> dict:
     bronze_result = save_raw_news(raw_news)
     normalized_news = [normalize_news(item) for item in raw_news]
     silver_result = save_news(normalized_news)
+    batch_ids = save_last_collection(raw_news)
 
     console.divider()
     console.success(f"{len(raw_news)} notícias recebidas do feed")
@@ -89,11 +91,13 @@ def collect_and_store(limit: int = 10, show_header: bool = True) -> dict:
     console.label("Novas na silver", silver_result["inserted"], "green")
     console.label("Duplicadas", silver_result["duplicates"], "yellow")
     console.label("Total silver", silver_result["total"])
+    console.label("Lote atual", f"{len(batch_ids)} notícias", "bright_cyan")
 
     return {
         "raw_news": raw_news,
         "bronze": bronze_result,
         "silver": silver_result,
+        "article_ids": batch_ids,
     }
 
 

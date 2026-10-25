@@ -33,7 +33,7 @@ def section(step: str, title: str) -> None:
 
 
 def label(name: str, value: object, color: str = "white") -> None:
-    click.secho(f"  {name:<18}", fg="bright_black", nl=False)
+    click.secho(f"  {name:<18} ", fg="bright_black", nl=False)
     click.secho(str(value), fg=color)
 
 
@@ -66,10 +66,15 @@ def article_collected(index: int, total: int, article: dict) -> None:
     )
 
 
-def analysis_started(index: int, total: int, title: str) -> None:
+def analysis_started(
+    index: int,
+    total: int,
+    title: str,
+    status: str = "ANALISANDO",
+) -> None:
     click.echo()
     click.secho(
-        f"  [{index:02d}/{total:02d}] ANALISANDO",
+        f"  [{index:02d}/{total:02d}] {status}",
         fg="bright_cyan",
         bold=True,
     )

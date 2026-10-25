@@ -14,7 +14,7 @@ from src.signals.aggregate import calculate_and_present
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 def cli() -> None:
-    """OUVIR, SENTIR e PREVER o mercado brasileiro de energia."""
+    """OUVIR e SENTIR o mercado; PREVER nos notebooks de ML."""
 
 
 @cli.command()
@@ -36,10 +36,10 @@ def collect(limit: int) -> None:
     "--replay",
     type=click.IntRange(min=1),
     metavar="N",
-    help="Reexibir N análises salvas, sem chamar a API ou alterar dados.",
+    help="Apresentar novamente N análises selecionadas.",
 )
 def analyze(replay: int | None) -> None:
-    """Analisar com IA somente as notícias ainda pendentes."""
+    """Apresentar a análise com IA das notícias selecionadas."""
 
     if replay:
         replay_energy_news_analysis(limit=replay)

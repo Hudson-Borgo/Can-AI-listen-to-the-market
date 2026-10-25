@@ -3,6 +3,14 @@ import pandas as pd
 import streamlit as st
 
 from src.dashboard.data import load_daily_signals, load_energy_news
+from src.dashboard.theme import (
+    EDP_ICE_BLUE,
+    EDP_NAVY,
+    EDP_SLATE_GREY,
+    EDP_WHITE,
+    apply_edp_theme,
+    status_badge,
+)
 
 
 # ============================================================
@@ -11,9 +19,11 @@ from src.dashboard.data import load_daily_signals, load_energy_news
 
 st.set_page_config(
     page_title="Can AI Listen to the Market?",
-    page_icon="📊",
+    page_icon="⚡",
     layout="wide",
 )
+
+apply_edp_theme()
 
 
 # ============================================================
@@ -41,7 +51,7 @@ except Exception as error:
 # A data passa a ser um filtro global da pagina.
 #
 # Ao selecionar outro dia:
-# - Market Signal muda
+# - News Signal muda
 # - Articles Analyzed muda
 # - Average Relevance muda
 # - News Feed muda
@@ -128,7 +138,7 @@ st.title("Brazilian Electricity Market")
 
 st.caption(
     "AI-powered monitoring of news sentiment and "
-    "signals for the BBCE eHub M+1 daily closing price."
+    "news-derived features for the BBCE eHub M+1 closing price."
 )
 
 st.divider()
@@ -156,19 +166,15 @@ signal_col, articles_col, relevance_col = st.columns(3)
 with signal_col:
 
     st.metric(
-        label="Market Signal",
+        label="News Signal",
         value=f"{current_signal:+.3f}",
-        help="Weighted sentiment signal ranging from -1 to +1.",
+        help=(
+            "Weighted news indicator ranging from -1 to +1. "
+            "It is an input feature for forecasting models, not a forecast."
+        ),
     )
 
-    if current_trend == "POSITIVE":
-        st.success("POSITIVE")
-
-    elif current_trend == "NEGATIVE":
-        st.error("NEGATIVE")
-
-    else:
-        st.warning("NEUTRAL")
+    status_badge(current_trend)
 
 
 # ------------------------------------------------------------
@@ -182,7 +188,7 @@ with articles_col:
         value=articles_today,
         help=(
             "Number of analyzed articles contributing "
-            "to the market signal for the selected date."
+            "to the news signal for the selected date."
         ),
     )
 
@@ -221,10 +227,11 @@ st.divider()
 # -0.15 -> limite negativo
 # ============================================================
 
-st.subheader("Daily Market Signal")
+st.subheader("Daily News Signal")
 
 st.caption(
-    "Historical evolution of the AI-generated market signal."
+    "Historical evolution of the AI-generated news feature. "
+    "This indicator is not a price forecast by itself."
 )
 
 
@@ -242,7 +249,12 @@ chart_data["date"] = (
 signal_line = (
     alt.Chart(chart_data)
     .mark_line(
-        point=True,
+        color=EDP_ICE_BLUE,
+        point=alt.OverlayMarkDef(
+            color=EDP_ICE_BLUE,
+            filled=True,
+            size=55,
+        ),
         strokeWidth=3,
     )
     .encode(
@@ -252,7 +264,7 @@ signal_line = (
         ),
         y=alt.Y(
             "signal:Q",
-            title="Market Signal",
+            title="News Signal",
             scale=alt.Scale(
                 domain=[-1, 1]
             ),
@@ -298,6 +310,8 @@ zero_line = (
         }
     )
     .mark_rule(
+        color=EDP_WHITE,
+        opacity=0.65,
         strokeDash=[5, 5]
     )
     .encode(
@@ -319,6 +333,8 @@ positive_threshold = (
         }
     )
     .mark_rule(
+        color=EDP_SLATE_GREY,
+        opacity=0.62,
         strokeDash=[2, 2]
     )
     .encode(
@@ -340,6 +356,8 @@ negative_threshold = (
         }
     )
     .mark_rule(
+        color=EDP_SLATE_GREY,
+        opacity=0.62,
         strokeDash=[2, 2]
     )
     .encode(
@@ -353,6 +371,20 @@ chart = (
     + zero_line
     + positive_threshold
     + negative_threshold
+).properties(
+    background=EDP_NAVY,
+).configure_view(
+    strokeOpacity=0,
+).configure_axis(
+    domainColor=EDP_WHITE,
+    gridColor=EDP_WHITE,
+    gridOpacity=0.10,
+    labelColor=EDP_WHITE,
+    tickColor=EDP_WHITE,
+    titleColor=EDP_WHITE,
+).configure_legend(
+    labelColor=EDP_WHITE,
+    titleColor=EDP_WHITE,
 )
 
 
@@ -464,7 +496,7 @@ st.divider()
 st.subheader("Energy News")
 
 st.caption(
-    "Articles contributing to the market signal "
+    "Articles contributing to the news signal "
     f"for {selected_date}."
 )
 
@@ -578,29 +610,11 @@ for _, article in feed.iterrows():
     # SENTIMENT BADGE
     # --------------------------------------------------------
 
-    if sentiment == "POSITIVE":
-
-        st.success(
-            f"POSITIVE  ·  "
-            f"Score {score:+.2f}  ·  "
-            f"Relevance {relevance:.2f}"
-        )
-
-    elif sentiment == "NEGATIVE":
-
-        st.error(
-            f"NEGATIVE  ·  "
-            f"Score {score:+.2f}  ·  "
-            f"Relevance {relevance:.2f}"
-        )
-
-    else:
-
-        st.warning(
-            f"NEUTRAL  ·  "
-            f"Score {score:+.2f}  ·  "
-            f"Relevance {relevance:.2f}"
-        )
+    status_badge(
+        f"{sentiment}  ·  "
+        f"Score {score:+.2f}  ·  "
+        f"Relevance {relevance:.2f}"
+    )
 
 
     # --------------------------------------------------------
@@ -668,12 +682,12 @@ for _, article in feed.iterrows():
 # ============================================================
 
 with st.expander(
-    "How is the market signal calculated?"
+    "How is the news signal calculated?"
 ):
 
     st.markdown(
         """
-The daily market signal combines the sentiment score and
+The daily news signal combines the sentiment score and
 market relevance assigned by the AI model to each article.
 
 ### Formula
@@ -686,7 +700,10 @@ Each article receives two numerical values:
 - **Relevance:** estimated market relevance ranging from **0 to 1**
 
 Articles with higher relevance therefore have a greater
-influence on the daily market signal.
+influence on the daily news signal.
+
+This signal is a feature for forecasting experiments. It is not,
+by itself, a prediction of the next closing price.
 
 ### Classification
 
